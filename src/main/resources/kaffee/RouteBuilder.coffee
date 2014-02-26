@@ -21,7 +21,8 @@ class RouteBuilder
 
   get: (route, controllerClass, action) ->
     root.router.handle "get", route, controllerClass, action
-#    @routeMatcher.get(route, controller[action]) if controller[action]?
+
+
 
   handle: (verb, route, controllerClass, action = 'index') ->
     if @routeDefs["#{verb}|#{route}"]?
@@ -79,12 +80,20 @@ class RouteBuilder
 
   build: (done) ->
     LOG = @logger
+    router = root.router = this
 
     # expose DSL to load mainRootDef
-    exposableFunctions = ["get", "importRoute"]
-    root[func] = this[func] for func in exposableFunctions
+    exposableFunctions = ["get", "post", "put", "delete", "head", "options", "trace", "connect", "patch", "all",
+                          "getWithRegEx", "postWithRegEx", "putWithRegEx", "deleteWithRegEx", "headWithRegEx",
+                          "optionsWithRegEx", "traceWithRegEx", "connectWithRegEx", "patchWithRegEx", "allWithRegEx"]
 
-    router = root.router = this
+    for func in exposableFunctions
+      do (func)->
+        root[func] = (route, controllerClass, action) ->
+          root.router.handle func, route, controllerClass, action
+
+    root["importRoute"] = this["importRoute"];
+
     cwd  = new java.io.File(".").getCanonicalPath() + "/"
 
     LOG.log "Building Routes... CWD: #{cwd}"
