@@ -17,82 +17,99 @@ limitations under the License.
 vertx  = require 'vertx'
 container = require 'vertx/container'
 logger = container.logger
-
+_ = require "kaffee/utils/lodash"
+adjuster = require "kaffee/utils/PathAdjuster"
+template = require "kaffee/Template"
 root = this;
 
+requestHandlerBinding =
+  render: (templateFile, data, done) ->
+    template.render templateFile, data, done
+
+  notFound: (req)->
+    @noMatchHandler req
+
+  noMatchHandler: (req) ->
+    req.response.statusCode 404
+    err404 = adjuster.adjust "webapp/err/404.html"
+    if err404?
+      req.response.sendFile err404
+    else
+      req.response.end "<h1>Not Found</h1>"
+
 class RouteBuilder
-  constructor: (@mainRouteDef = "conf/routes", @controllerDir = "controllers", @filter = ".*\.(js|coffee)") ->
+  constructor: (@mainRouteDef = "conf/routes", @controllerDir = "controllers") ->
     @controllerClasses = {}
     @routeDefs = {}
     vertx = require 'vertx'
-    @logger = require 'vertx/console'
-    @logger.log("Loading RouteBuilder")
+    @logger = logger
+    @logger.debug("Loading RouteBuilder")
     @fs    = vertx.fileSystem
     @routeMatcher = new vertx.RouteMatcher()
 
   importRoute: (importDef) ->
     router = root.router
-    router.logger.log "Import route def '#{importDef}'"
+    router.logger.debug "Import route def '#{importDef}'"
     router.loadFile "conf/#{importDef}"
 
-  get: (route, controllerClass, action) ->
-    root.router.handle "get", route, controllerClass, action
+  resource: (prefix, docRoot) ->
+    router = root.router
+    router.logger.debug "Resource [#{prefix}] -> [#{docRoot}]"
+    controller = router.load "ResourceController"
+    controller.addMapping prefix, docRoot
 
-
+    router.handle "getWithRegEx", "#{prefix}/.*", "ResourceController", "handle"
 
   handle: (verb, route, controllerClass, action = 'index') ->
     if @routeDefs["#{verb}|#{route}"]?
-      @logger.log("Ignore defined route: #{verb.toUpperCase()} #{route}.")
+      @logger.debug("Ignore defined route: #{verb.toUpperCase()} #{route}.")
       return
 
     @routeDefs["#{verb}|#{route}"] = Date.now()
 
     msg = verb.toUpperCase() + " #{route} -> #{controllerClass}.#{action}"
     controller = @load controllerClass
+    @logger.debug "Controller contains request action(#{action}): #{controller?[action]?}"
+    @logger.debug "RouteMatcher contains request verb #{verb}: #{@routeMatcher[verb]?}"
     if @routeMatcher[verb]? and controller?[action]?
-      @routeMatcher[verb] route, controller[action]
-      @logger.log("Mapping #{msg}")
+      @logger.debug("Mapping #{msg}")
+      @routeMatcher[verb] route, _.bind(controller[action], requestHandlerBinding)
+      @logger.debug("Mapped #{msg}")
     else
-      @logger.log("Failed to load #{msg}")
+      @logger.debug("Failed to load #{msg}")
 
   load: (controllerClass) ->
     if ! @controllerClasses[controllerClass]?
-      @logger.log "Loading #{@controllerDir}/#{controllerClass}"
+      @logger.debug "Loading #{@controllerDir}/#{controllerClass}"
+
       clazz = require("#{@controllerDir}/#{controllerClass}")
-#      @logger.log JSON.stringify clazz
+      @logger.debug JSON.stringify clazz
       if clazz instanceof Function
-#        @logger.log "#{controllerClass} is instanceof Function"
+        @logger.debug "#{controllerClass} is instanceof Function"
         @controllerClasses[controllerClass] = new clazz() # instanable class
       else
-        @logger.log "#{controllerClass} is object"
+        @logger.debug "#{controllerClass} is object"
         @controllerClasses[controllerClass] = clazz # object with static function
     else
       @controllerClasses[controllerClass]
 
-#  locateDevelopmentDirectory: (directory) ->
-#    pAdjuster = org.vertx.java.core.file.impl.PathAdjuster
-#    moduleDir = pAdjuster.adjust(__jvertx, ".")
-#
   loadFile: (fileToLoad)->
     LOG = @logger
-    cwd  = new java.io.File(".").getCanonicalPath()
 
-    locations = [
-      fileToLoad,
-      "#{cwd}/#{fileToLoad}",
-      "#{cwd}/src/main/#{fileToLoad}",
-      "#{cwd}/src/main/resources/#{fileToLoad}"
-    ]
-    fs = @fs
-    for file in locations
-      do (file) ->
-        LOG.log "Try to loading #{file}"
-#        if fs.existsSync file
-        try
-          load file
-          LOG.log "Loaded #{file}"
-        catch err
-#          LOG.log "Fai loading #{file}: #{err}"
+    absPath = adjuster.adjust fileToLoad
+    if absPath?
+      load fileToLoad
+    else
+      LOG.warn "File [#{fileToLoad}] not found in classpath."
+
+  noMatchHandler: (req) ->
+    req.response.statusCode 404
+
+    if router.fs.existsSync "../../www/err/404.html"
+      req.response.sendFile("../../www/err/404.html")
+    else
+      req.response.end "<h1>Not Found</h1>"
+
 
   build: (done) ->
     LOG = @logger
@@ -109,21 +126,16 @@ class RouteBuilder
           root.router.handle func, route, controllerClass, action
 
     root["importRoute"] = this["importRoute"];
+    root["resource"] = this["resource"];
 
     cwd  = new java.io.File(".").getCanonicalPath() + "/"
 
-    LOG.log "Building Routes... CWD: #{cwd}"
+    LOG.debug "Building Routes... CWD: #{cwd}"
 
     @loadFile "#{@mainRouteDef}.js"
     @loadFile "#{@mainRouteDef}.coffee"
 
-    router.routeMatcher.noMatch (req) ->
-      req.response.statusCode 404
-
-      if router.fs.existsSync "../../www/err/404.html"
-        req.response.sendFile("../../www/err/404.html")
-      else
-        req.response.end "<h1>Not Found</h1>"
+    router.routeMatcher.noMatch requestHandlerBinding.noMatchHandler
 
     done router.routeMatcher
 

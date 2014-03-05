@@ -6,7 +6,7 @@ fs     = vertx.fileSystem
 
 PathAdjuster = require 'kaffee/utils/PathAdjuster'
 
-render = (templateFile, data, done = null ) ->
+render = (templateFile, data, done ) ->
   templateFileAdjusted = PathAdjuster.adjust templateFile
 #  LOG.log "Handlebars: rendering #{templateFile} (#{templateFileAdjusted}) with data: " + JSON.stringify data
 
