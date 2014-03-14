@@ -24,3 +24,5 @@ vertx_classpath.txt
 src/main/resources/kaffee/**/*.js
 src/main/resources/**/*.map
 src/main/resources/controllers/**/*.js
+*.swp
+*~
