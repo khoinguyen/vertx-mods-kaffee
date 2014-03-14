@@ -19,23 +19,12 @@ container = require 'vertx/container'
 logger = container.logger
 _ = require "kaffee/utils/lodash"
 adjuster = require "kaffee/utils/PathAdjuster"
-template = require "kaffee/Template"
+
+BaseController = require "kaffee/http/BaseController"
+
 root = this;
 
-requestHandlerBinding =
-  render: (templateFile, data, done) ->
-    template.render templateFile, data, done
 
-  notFound: (req)->
-    @noMatchHandler req
-
-  noMatchHandler: (req) ->
-    req.response.statusCode 404
-    err404 = adjuster.adjust "webapp/err/404.html"
-    if err404?
-      req.response.sendFile err404
-    else
-      req.response.end "<h1>Not Found</h1>"
 
 class RouteBuilder
   constructor: (@mainRouteDef = "conf/routes", @controllerDir = "controllers") ->
@@ -73,7 +62,7 @@ class RouteBuilder
     @logger.debug "RouteMatcher contains request verb #{verb}: #{@routeMatcher[verb]?}"
     if @routeMatcher[verb]? and controller?[action]?
       @logger.debug("Mapping #{msg}")
-      @routeMatcher[verb] route, _.bind(controller[action], requestHandlerBinding)
+      @routeMatcher[verb] route, _.bind(controller[action], controller)
       @logger.debug("Mapped #{msg}")
     else
       @logger.debug("Failed to load #{msg}")
@@ -83,13 +72,18 @@ class RouteBuilder
       @logger.debug "Loading #{@controllerDir}/#{controllerClass}"
 
       clazz = require("#{@controllerDir}/#{controllerClass}")
-      @logger.debug JSON.stringify clazz
+
       if clazz instanceof Function
         @logger.debug "#{controllerClass} is instanceof Function"
-        @controllerClasses[controllerClass] = new clazz() # instanable class
+        _.assign clazz::, BaseController::
+        theObject = new clazz(); # instanable class
+
+        @logger.debug "Class contains: " + JSON.stringify theObject
+        @controllerClasses[controllerClass] = theObject
       else
         @logger.debug "#{controllerClass} is object"
-        @controllerClasses[controllerClass] = clazz # object with static function
+        theObject = _.assign clazz, BaseController::
+        @controllerClasses[controllerClass] = theObject # object with static function
     else
       @controllerClasses[controllerClass]
 
@@ -101,15 +95,6 @@ class RouteBuilder
       load fileToLoad
     else
       LOG.warn "File [#{fileToLoad}] not found in classpath."
-
-  noMatchHandler: (req) ->
-    req.response.statusCode 404
-
-    if router.fs.existsSync "../../www/err/404.html"
-      req.response.sendFile("../../www/err/404.html")
-    else
-      req.response.end "<h1>Not Found</h1>"
-
 
   build: (done) ->
     LOG = @logger
@@ -135,7 +120,7 @@ class RouteBuilder
     @loadFile "#{@mainRouteDef}.js"
     @loadFile "#{@mainRouteDef}.coffee"
 
-    router.routeMatcher.noMatch requestHandlerBinding.noMatchHandler
+    router.routeMatcher.noMatch BaseController::noMatchHandler
 
     done router.routeMatcher
 

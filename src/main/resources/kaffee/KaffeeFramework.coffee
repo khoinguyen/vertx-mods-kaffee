@@ -26,6 +26,7 @@ kaffeeConf = conf.getObject("kaffee") ? new JsonObject()
 
 logger.debug kaffeeConf
 
+require "kaffee/http/RequestHelper"
 
 # create routeMatcher
 RouteBuilder = require 'kaffee/RouteBuilder'
@@ -43,6 +44,7 @@ builder.build (routeMatcher) ->
 
   listenPort = httpConf.getNumber "port", 8080
   listenHost = httpConf.getString "host", 'localhost'
+
 
   logger.info "Start listening on #{listenHost}:#{listenPort}"
   server.listen listenPort, listenHost
