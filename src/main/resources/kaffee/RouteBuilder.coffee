@@ -16,7 +16,7 @@ limitations under the License.
 
 vertx  = require 'vertx'
 container = require 'vertx/container'
-logger = container.logger
+LOG = container.logger
 _ = require "kaffee/utils/lodash"
 adjuster = require "kaffee/utils/PathAdjuster"
 
@@ -31,8 +31,7 @@ class RouteBuilder
     @controllerClasses = {}
     @routeDefs = {}
     vertx = require 'vertx'
-    @logger = logger
-    @logger.debug("Loading RouteBuilder")
+    LOG.debug("Loading RouteBuilder")
     @fs    = vertx.fileSystem
     @routeMatcher = new vertx.RouteMatcher()
 
@@ -42,54 +41,67 @@ class RouteBuilder
     router.loadFile "conf/#{importDef}"
 
   resource: (prefix, docRoot) ->
-    router = root.router
-    router.logger.debug "Resource [#{prefix}] -> [#{docRoot}]"
-    controller = router.load "ResourceController"
+#    router = root.router
+    prefix = "#{prefix}/" unless prefix.substr(-1, 1) == '/'
+    LOG.info "Resource [#{prefix}] -> [#{docRoot}]"
+    controller = @load "ResourceController"
     controller.addMapping prefix, docRoot
-
-    router.handle "getWithRegEx", "#{prefix}/.*", "ResourceController", "handle"
+    @handle "getWithRegEx", "#{prefix}.*", "ResourceController", "handle"
 
   handle: (verb, route, controllerClass, action = 'index') ->
+    routeType = typeof route
+
+    isRegExp = (typeof route == 'object' && typeof route['test'] == 'function')
+    isRegExp = isRegExp && (typeof route['exec'] == 'function' && typeof route['toString'] == 'function')
+
+    if isRegExp && verb.length < 9
+      LOG.debug "RegExp route (#{route}) detected, verb is not *WithRegEx (verb length: #{verb.length}). Auto change to WithRegEx"
+      newVerb = "#{verb}WithRegEx"
+      regExVerbs = ["getWithRegEx", "postWithRegEx", "putWithRegEx", "deleteWithRegEx", "headWithRegEx", "optionsWithRegEx", "traceWithRegEx", "connectWithRegEx", "patchWithRegEx"]
+      if newVerb in regExVerbs
+        verb = newVerb
+        route = route.toString()
+        route = route.substr(1, route.length-2)
+
+
     if @routeDefs["#{verb}|#{route}"]?
-      @logger.debug("Ignore defined route: #{verb.toUpperCase()} #{route}.")
+      LOG.debug("Ignore defined route: #{verb.toUpperCase()} #{route}.")
       return
 
     @routeDefs["#{verb}|#{route}"] = Date.now()
 
     msg = verb.toUpperCase() + " #{route} -> #{controllerClass}.#{action}"
     controller = @load controllerClass
-    @logger.debug "Controller contains request action(#{action}): #{controller?[action]?}"
-    @logger.debug "RouteMatcher contains request verb #{verb}: #{@routeMatcher[verb]?}"
+    LOG.debug "Controller contains request action(#{action}): #{controller?[action]?}"
+    LOG.debug "RouteMatcher contains request verb #{verb}: #{@routeMatcher[verb]?}"
     if @routeMatcher[verb]? and controller?[action]?
-      @logger.debug("Mapping #{msg}")
+      LOG.debug("Mapping #{msg}")
       @routeMatcher[verb] route, _.bind(controller[action], controller)
-      @logger.debug("Mapped #{msg}")
+      LOG.debug("Mapped #{msg}")
     else
-      @logger.debug("Failed to load #{msg}")
+      LOG.debug("Failed to load #{msg}")
 
   load: (controllerClass) ->
     if ! @controllerClasses[controllerClass]?
-      @logger.debug "Loading #{@controllerDir}/#{controllerClass}"
+      LOG.debug "Loading #{@controllerDir}/#{controllerClass}"
 
       clazz = require("#{@controllerDir}/#{controllerClass}")
 
       if clazz instanceof Function
-        @logger.debug "#{controllerClass} is instanceof Function"
+        LOG.debug "#{controllerClass} is instanceof Function"
         _.assign clazz::, BaseController::
         theObject = new clazz(); # instanable class
 
-        @logger.debug "Class contains: " + JSON.stringify theObject
+        LOG.debug "Class contains: " + JSON.stringify theObject
         @controllerClasses[controllerClass] = theObject
       else
-        @logger.debug "#{controllerClass} is object"
+        LOG.debug "#{controllerClass} is object"
         theObject = _.assign clazz, BaseController::
         @controllerClasses[controllerClass] = theObject # object with static function
     else
       @controllerClasses[controllerClass]
 
   loadFile: (fileToLoad)->
-    LOG = @logger
-
     absPath = adjuster.adjust fileToLoad
     if absPath?
       load fileToLoad
@@ -97,7 +109,6 @@ class RouteBuilder
       LOG.warn "File [#{fileToLoad}] not found in classpath."
 
   build: (done) ->
-    LOG = @logger
     router = root.router = this
 
     # expose DSL to load mainRootDef
@@ -110,8 +121,8 @@ class RouteBuilder
         root[func] = (route, controllerClass, action) ->
           root.router.handle func, route, controllerClass, action
 
-    root["importRoute"] = this["importRoute"];
-    root["resource"] = this["resource"];
+    root.importRoute = _.bind this.importRoute, this
+    root.resource    = _.bind this.resource, this
 
     cwd  = new java.io.File(".").getCanonicalPath() + "/"
 

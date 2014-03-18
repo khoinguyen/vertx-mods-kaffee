@@ -33,6 +33,7 @@ class ResourceController
     matched = _.find _mappings, (mapping) ->
       path.indexOf mapping.prefix >= 0
 
+
     filePath = path.substr matched.prefix.length
     filePath = "#{matched.docRoot}/#{filePath}"
 
@@ -44,8 +45,10 @@ class ResourceController
       @notFound(req)
 
   addMapping: (pattern, docRoot) ->
+    docRoot = "#{docRoot}/" unless docRoot.substr(-1,1) == "/"
     LOG.info "Adding mapping [#{pattern}] -> [#{docRoot}]"
     _mappings.push {prefix: pattern, docRoot: docRoot}
 
+    LOG.info "Mapped: " + JSON.stringify _mappings
 
 module.exports = ResourceController
