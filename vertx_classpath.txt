@@ -1,0 +1,5 @@
+src/main/resources
+bin
+out/production/vertx-web
+out/test/vertx-web
+build/deps
